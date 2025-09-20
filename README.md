@@ -1,2 +1,12 @@
 # google-api-for-C
-google api client written in C
+Google api client written in C. 
+
+# Dependencies: 
+requires `cJSON` and `libcurl`
+
+# Building:
+run
+```
+make
+```
+at the top dir. 

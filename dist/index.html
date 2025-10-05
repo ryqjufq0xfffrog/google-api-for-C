@@ -1,0 +1,11 @@
+<!DOCTYPE HTML>
+<html lang="en">
+ <head>
+  <meta charset="utf-8">
+  <title>authenticating...</title>
+  <script>document.addEventListener("load", function(){const d=document;const r=d.getElementById("res");const p=new URLSearchParams(location.search);if(p.get("code")){r.textContent="Paste this text to the console: ";const s=d.createElement("span");s.className="code";s.textContent=`${p.get("code")}&${p.get("scope")}${p.get("state")?"&"+p.get("state"):''}`;r.append(s)}});</script>
+ </head>
+ <body>
+  <p id="res">Something went wrong...</p>
+ </body>
+</html>

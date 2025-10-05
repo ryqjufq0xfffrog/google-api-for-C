@@ -2,21 +2,19 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include <curl/curl.h>
-#include <cjson/cJSON.h>
-
 #include "./src/google.h"
 #include "./src/buffers.h"
-#include "./src/http_utils.h"
+#include "./src/shell.h"
 
-CREDENTIALS readCredentials(char*);
+GOOGLE_AUTH readCredentials(char*);
 
 int main(int argc, char** argv) {
-//  struct curl_slist* headers = NULL;
-//  unsigned short respCode = 0;
   char* credentialPath = NULL;
-
-  CREDENTIALS credentials;
+  char* authCode;
+  
+  GOOGLE_AUTH auth;
+  
+  goog_global_init();
   
   for(int argi = 1; argi < argc; argi++) {
     if(strcmp(argv[argi], "-c") == 0) {
@@ -30,39 +28,35 @@ int main(int argc, char** argv) {
   }
   
   if(!credentialPath) {
-    fprintf(stderr, "missing credential path");
+    fprintf(stderr, "missing credential path\n");
     return 1;
   }
-
-  credentials = readCredentials(credentialPath);
-  char* scopes[4] = {"drive", "profile", "mail", NULL};
-  char* authURL = createAuthUrl(credentials.id, scopes, "", "localhost");
-  printf("%s\n%s\n", credentials.id, credentials.secret);
+  
+  auth = readCredentials(credentialPath);
+  char* scopes[2] = {"https://www.googleapis.com/auth/drive.appdata", NULL};
+  auth.scopes = scopes;
+  char* authURL = createAuthUrl(&auth, "");
   printf("%s\n", authURL);
   
-/*  headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlenc0ded");
-
-  BinData* ptr = http_req2mem(
-    "https://oauth2.googleapis.com/token",
-    headers, &respCode
-  );
-
-  printf("%lu bytes retrieved\n", (unsigned long) ptr ->size);
-  printf("%d\n", respCode);
-  printf("%s\n", ptr ->mem);
+  authCode = getpasswd("Paste the Authorization Code: ", 257);
+  obtainTokenFromCode(&auth, authCode);
   
-  free(ptr ->mem);
-*/
-
+  // Show obtained access token and refresh token
+  printf("Access token: %s\nRefresh_token: %s\n",
+      auth.token, auth.refresh);
+  
+  goog_global_cleanup();
+  
   return 0;
 }
-
-CREDENTIALS readCredentials(char* filePath) {
+ 
+GOOGLE_AUTH readCredentials(char* filePath) {
   FILE* fp;
-  CREDENTIALS credentials;
+  GOOGLE_AUTH credentials;
   const char* _ID_STR = "client_id=";
   const char* _SECRET_STR = "client_secret=";
-
+  const char* _R_URL_STR = "redirect_uri=";
+  
   if(fp = fopen(filePath, "r")) {
     char buffer[512];
     
@@ -78,6 +72,11 @@ CREDENTIALS readCredentials(char* filePath) {
         strcpy(credentials.id, buffer + strlen(_ID_STR));
         // remove \n at the end
         credentials.id[strlen(credentials.id) - 1] = '\0';
+      }else if(strncmp(buffer, _R_URL_STR, strlen(_R_URL_STR)) == 0) {
+        // copy client id
+        strcpy(credentials.redirect, buffer + strlen(_R_URL_STR));
+        // remove \n at the end
+        credentials.redirect[strlen(credentials.redirect) - 1] = '\0';
       }
     }
     
@@ -87,6 +86,6 @@ CREDENTIALS readCredentials(char* filePath) {
     // Couldn't open credentials file
     fprintf(stderr, "Couldn't open %s", filePath);
   }
-
+  
   return credentials;
 }

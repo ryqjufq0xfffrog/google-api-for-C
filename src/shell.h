@@ -1,0 +1,1 @@
+char* getpasswd(char*, int);

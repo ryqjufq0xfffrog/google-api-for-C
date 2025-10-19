@@ -10,7 +10,7 @@ GOOGLE_AUTH readCredentials(char*);
 
 int main(int argc, char** argv) {
   char* credentialPath = NULL;
-  char* authCode;
+  char* queryStr;
   
   GOOGLE_AUTH auth;
   
@@ -21,7 +21,7 @@ int main(int argc, char** argv) {
       argi++;
       if(argi < argc) credentialPath = *(argv + argi);
       else {
-        fprintf(stderr, "missing filename after -c");
+        fprintf(stderr, "missing filename after -c\n");
         return 1;
       }
     }
@@ -34,12 +34,12 @@ int main(int argc, char** argv) {
   
   auth = readCredentials(credentialPath);
   char* scopes[2] = {"https://www.googleapis.com/auth/drive.appdata", NULL};
-  auth.scopes = scopes;
-  char* authURL = createAuthUrl(&auth, "");
+  auth.state = "";
+  char* authURL = createAuthUrl(&auth, scopes);
   printf("%s\n", authURL);
   
-  authCode = getpasswd("Paste the Authorization Code: ", 257);
-  obtainTokenFromCode(&auth, authCode);
+  queryStr = getpasswd("Paste the query string: ", 1280);
+  obtainTokenFromCode(&auth, queryStr);
   
   // Show obtained access token and refresh token
   printf("Access token: %s\nRefresh_token: %s\n",
@@ -52,32 +52,31 @@ int main(int argc, char** argv) {
  
 GOOGLE_AUTH readCredentials(char* filePath) {
   FILE* fp;
-  GOOGLE_AUTH credentials;
-  const char* _ID_STR = "client_id=";
-  const char* _SECRET_STR = "client_secret=";
-  const char* _R_URL_STR = "redirect_uri=";
+  GOOGLE_AUTH auth;
   
   if(fp = fopen(filePath, "r")) {
     char buffer[512];
     
     // Read line by line
     while(fgets(buffer, 512, fp)) {
-      if(strncmp(buffer, _SECRET_STR, strlen(_SECRET_STR)) == 0) {
-        // copy client secret
-        strcpy(credentials.secret, buffer + strlen(_SECRET_STR));
-        // remove \n at the end
-        credentials.secret[strlen(credentials.secret) - 1] = '\0';
-      }else if(strncmp(buffer, _ID_STR, strlen(_ID_STR)) == 0) {
-        // copy client id
-        strcpy(credentials.id, buffer + strlen(_ID_STR));
-        // remove \n at the end
-        credentials.id[strlen(credentials.id) - 1] = '\0';
-      }else if(strncmp(buffer, _R_URL_STR, strlen(_R_URL_STR)) == 0) {
-        // copy client id
-        strcpy(credentials.redirect, buffer + strlen(_R_URL_STR));
-        // remove \n at the end
-        credentials.redirect[strlen(credentials.redirect) - 1] = '\0';
+      char* dest;
+      char* readPtr;
+      if(strncmp(buffer, "client_secret=", 14) == 0) {
+        // client secret
+        dest = auth.secret;
+        readPtr = buffer + 14;
+      }else if(strncmp(buffer, "client_id", 9) == 0) {
+        // client id
+        dest = auth.id;
+        readPtr = buffer + 9;
+      }else if(strncmp(buffer, "redirect_uri=", 13) == 0) {
+        // redirect url
+        dest = auth.redirect;
+        readPtr = buffer + 13;
       }
+      strcpy(dest, readPtr);
+      // remove \n at the end
+      dest[strlen(dest) - 1] = '\0';
     }
     
     // Close file

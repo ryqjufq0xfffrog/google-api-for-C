@@ -13,6 +13,7 @@ int main(int argc, char** argv) {
   char* queryStr;
   
   GOOGLE_AUTH auth;
+  GOOGLE_SLIST* reqScopes = NULL;
   
   goog_global_init();
   
@@ -33,13 +34,15 @@ int main(int argc, char** argv) {
   }
   
   auth = readCredentials(credentialPath);
-  char* scopes[2] = {"https://www.googleapis.com/auth/drive.appdata", NULL};
-  auth.state = "";
-  char* authURL = createAuthUrl(&auth, scopes);
+  
+  goog_slist_append(reqScopes, "https://www.googleapis.com/auth/drive.appdata");
+  
+  auth.state[0] = '\0';
+  char* authURL = createAuthUrl(&auth, reqScopes);
   printf("%s\n", authURL);
   
   queryStr = getpasswd("Paste the query string: ", 1280);
-  obtainTokenFromCode(&auth, queryStr);
+  obtainTokenFromQuery(&auth, queryStr);
   
   // Show obtained access token and refresh token
   printf("Access token: %s\nRefresh_token: %s\n",
@@ -86,5 +89,5 @@ GOOGLE_AUTH readCredentials(char* filePath) {
     fprintf(stderr, "Couldn't open %s", filePath);
   }
   
-  return credentials;
+  return auth;
 }

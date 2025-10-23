@@ -26,12 +26,30 @@ void goog_free(void* ptr) {
   return;
 }
 
-GOOGLE_SLIST* 
-
-void goog_free_auth(GOOGLE_AUTH* auth) {
+GOOGLE_SLIST* goog_slist_append(GOOGLE_SLIST* list, char* str) {
+  GOOGLE_SLIST* newItem = (GOOGLE_SLIST* ) malloc(sizeof(GOOGLE_SLIST));
+  strcpy(newItem ->str, str);
+  newItem ->next = list;
+  
+  return newItem;
 }
 
-char* createAuthUrl(GOOGLE_AUTH* auth, char** reqScopes) {
+void goog_list_free(GOOGLE_SLIST* list) {
+  GOOGLE_SLIST* next = list ->next;
+  while(next) {
+    goog_free(list);
+    list = next;
+    next = list ->next;
+  }
+  
+  return;
+}
+
+void goog_free_auth(GOOGLE_AUTH* auth) {
+  goog_list_free(auth ->scopes);
+}
+
+char* createAuthUrl(GOOGLE_AUTH* auth, GOOGLE_SLIST* reqScopes) {
   char* URL;
   char params[2000];
   char* encodedScopes;
@@ -42,8 +60,8 @@ char* createAuthUrl(GOOGLE_AUTH* auth, char** reqScopes) {
   if(!URL) return NULL;
   
   // Join scopes with space
-  for(int i = 0; reqScopes[i]; i++) {
-    sprintf(scopestr + strlen(scopestr), "%s ", reqScopes[i]);
+  for(; reqScopes; reqScopes = reqScopes ->next) {
+    sprintf(scopestr + strlen(scopestr), "%s ", reqScopes ->str);
   }
   
   // First URL-encode strings
@@ -55,7 +73,7 @@ char* createAuthUrl(GOOGLE_AUTH* auth, char** reqScopes) {
       auth ->id, encodedScopes, auth ->state, encodedRedirect);
   // Finally generate URL
   sprintf(URL, "https://accounts.google.com/o/oauth2/v2/auth?%s", params);
-
+  
   // Free memory
   curl_free(encodedScopes);
   curl_free(encodedRedirect);
@@ -131,19 +149,27 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr) {
   }
   
   // Parse scope string
-  short scopeN = 0;
+  auth ->scopes = NULL;
+  
   short j = 0;
+  char scopeBuf[256];
+  
   for(short i = 0; scopeStr[i]; i++) {
     if(scopeStr[i] == ' ') {
       // Null terminate
-      auth ->scopes[scopeN][j] = '\0';
+      scopeBuf[j] = '\0';
+      goog_slist_append(auth ->scopes, scopeBuf);
       
       // Read next
-      scopeN++;
-      auth ->scopes[scopeN] = (char* ) malloc(257);
+      j = 0;
     }else {
-      auth ->scopes[scopeN][j] = scopeStr[i];
+      scopeBuf[j] = scopeStr[i];
       j++;
+      if(j > 255) {
+        fprintf(stderr, "One of the received scope was invalid: longer than 256 bytes");
+        
+        return -1;
+      }
     }
   }
   
@@ -153,10 +179,10 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr) {
   curl = curl_easy_init();
   data.mem = malloc(1);
   data.size = 0;
-
+  
   if(!curl) {
     fprintf(stderr, "curl init failed\n");
-
+    
     return -1;
   }
   

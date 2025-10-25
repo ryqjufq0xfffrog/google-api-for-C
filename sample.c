@@ -35,7 +35,7 @@ int main(int argc, char** argv) {
   
   auth = readCredentials(credentialPath);
   
-  goog_slist_append(reqScopes, "https://www.googleapis.com/auth/drive.appdata");
+  reqScopes = goog_slist_append(reqScopes, "https://www.googleapis.com/auth/drive.appdata");
   
   auth.state[0] = '\0';
   char* authURL = createAuthUrl(&auth, reqScopes);

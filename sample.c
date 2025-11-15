@@ -68,15 +68,16 @@ GOOGLE_AUTH readCredentials(char* filePath) {
         // client secret
         dest = auth.secret;
         readPtr = buffer + 14;
-      }else if(strncmp(buffer, "client_id", 9) == 0) {
+      }else if(strncmp(buffer, "client_id=", 10) == 0) {
         // client id
         dest = auth.id;
-        readPtr = buffer + 9;
+        readPtr = buffer + 10;
       }else if(strncmp(buffer, "redirect_uri=", 13) == 0) {
         // redirect url
         dest = auth.redirect;
         readPtr = buffer + 13;
-      }
+      }else continue; // no match? just don't copy.
+
       strcpy(dest, readPtr);
       // remove \n at the end
       dest[strlen(dest) - 1] = '\0';

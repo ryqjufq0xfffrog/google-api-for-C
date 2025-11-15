@@ -123,7 +123,7 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr) {
     }
     
     // Then read its value
-    for( ; queryRm[i] != '&'; i++) {
+    for( ; queryRm[i] && (queryRm[i] != '&'); i++) {
       if(queryRm[i] == '%') {
         // Decode url
         char ch = '\0';

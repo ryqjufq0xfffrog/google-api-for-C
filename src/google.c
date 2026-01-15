@@ -8,24 +8,39 @@
 #include "./buffers.h"
 #include "./google.h"
 
+/*
+ * Call this method before calling any of google methods
+ */
 void goog_global_init() {
   curl_global_init(CURL_GLOBAL_DEFAULT);
 
   return;
 }
 
+/*
+ * Everything's done? Then call this method.
+ */
 void goog_global_cleanup() {
   curl_global_cleanup();
-
+  
   return;
 }
 
+/*
+ * free memory allocated by malloc
+ */
 void goog_free(void* ptr) {
   free(ptr);
   
   return;
 }
 
+/*
+ * append the string at the end of the given GOOGLE_SLIST
+ * Params:
+ * list : a list of string
+ * str : the string to append at the end of the list
+ */
 GOOGLE_SLIST* goog_slist_append(GOOGLE_SLIST* list, char* str) {
   GOOGLE_SLIST* newItem = (GOOGLE_SLIST* ) malloc(sizeof(GOOGLE_SLIST));
   strcpy(newItem ->str, str);
@@ -34,64 +49,80 @@ GOOGLE_SLIST* goog_slist_append(GOOGLE_SLIST* list, char* str) {
   return newItem;
 }
 
-void goog_list_free(GOOGLE_SLIST* list) {
-  GOOGLE_SLIST* next = list ->next;
-  while(next) {
-    goog_free(list);
-    list = next;
-    next = list ->next;
+/*
+ * free a GOOGLE_SLIST
+ */
+void goog_list_free_all(GOOGLE_SLIST* list) {
+  while(list) {
+    GOOGLE_SLIST* prev = list;
+    list = list ->next;
+    goog_free(prev);
   }
   
   return;
 }
 
-void goog_free_auth(GOOGLE_AUTH* auth) {
-  goog_list_free(auth ->scopes);
+/*
+ * GOOGLE_AUTH constructor
+ */
+GOOGLE_AUTH* new_GoogleAuth() {
+  GOOGLE_AUTH* auth = (GOOGLE_AUTH* ) malloc(sizeof(GOOGLE_AUTH));
+  auth ->scopes = NULL;
+  
+  return auth;
 }
 
-char* createAuthUrl(GOOGLE_AUTH* auth, GOOGLE_SLIST* reqScopes) {
+/*
+ * free a GOOGLE_AUTH
+ */
+void goog_free_auth(GOOGLE_AUTH* auth) {
+  goog_list_free_all(auth ->scopes);
+  goog_free(auth);
+}
+
+/*
+ * creates an redirect URL for Google's authorization server
+ *
+ * Params:
+ * auth : contains credentials
+ * reqScopes : the list of scopes that contains all you need
+ * state : string; any value to maintain state
+ * offline : boolean; set 1 to get refresh token
+ * optional : string; optional query parameters.
+ * * Must start with & like this: "&login_hint=sample.gmail.com&prompt=none"
+ */
+char* createAuthUrl(GOOGLE_AUTH* auth, GOOGLE_SLIST* reqScopes, char* state, int offline, char* optional) {
   char* URL;
   char params[2000];
-  char* encodedScopes;
-  char* encodedRedirect;
-  char scopestr[1536];
+  char* scopes_encoded;
+  char* redirect_encoded;
+  char scopestr[1536] = "";
   
   URL = (char* ) malloc(2048);
   if(!URL) return NULL;
   
   // Join scopes with space
-  for(; reqScopes; reqScopes = reqScopes ->next) {
+  for( ; reqScopes; reqScopes = reqScopes ->next) {
     sprintf(scopestr + strlen(scopestr), "%s ", reqScopes ->str);
   }
   
-  // First URL-encode strings
-  encodedScopes = curl_easy_escape(NULL, scopestr, strlen(scopestr));
-  encodedRedirect = curl_easy_escape(NULL, auth ->redirect, strlen(auth ->redirect));
+  // first URL-encode strings
+  scopes_encoded = curl_easy_escape(NULL, scopestr, strlen(scopestr));
+  redirect_encoded = curl_easy_escape(NULL, auth ->redirect, strlen(auth ->redirect));
+  // generate Query String
+  sprintf(params, "client_id=%s&response_type=code&scope=%s&state=%s&access_type=%s&redirect_uri=%s%s",
+      auth ->id, scopes_encoded, state, offline? "offline": "online", redirect_encoded, optional);
+  // free encoded strings
+  curl_free(scopes_encoded);
+  curl_free(redirect_encoded);
   
-  // Generate Wuery String
-  sprintf(params, "client_id=%s&response_type=code&scope=%s&state=%s&redirect_uri=%s",
-      auth ->id, encodedScopes, auth ->state, encodedRedirect);
-  // Finally generate URL
+  // generate the result
   sprintf(URL, "https://accounts.google.com/o/oauth2/v2/auth?%s", params);
-  
-  // Free memory
-  curl_free(encodedScopes);
-  curl_free(encodedRedirect);
   
   return URL;
 }
 
-int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr) {
-  // cURL variables
-  CURL* curl;
-  
-  BinData data;
-  CURLcode res;
-  long resCode = 0;
-  struct curl_slist* headers = NULL;
-  unsigned short respCode = 0;
-  char postBody[1280] = "";
-  
+int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr, char* state) {
   /*
    * Parse query string
    */
@@ -101,9 +132,10 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr) {
   char stateStr[512] = "";
   
   char* queryRm = queryStr;
-  // Ignore "?"
+  // Ignore leading "?"
   if(queryRm[0] == '?') queryRm++;
-  for(short i = 0; queryRm[i]; i++){
+  
+  for(short i = 0; ; i++) {
     char* dest;
     // ?name1=value1&name2=value2.
     if(strncmp("code=", queryRm + i, 5) == 0) {
@@ -120,10 +152,17 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr) {
       fprintf(stderr, "OAuth2 Error");
       
       return -1;
+    }else {
+      while(queryRm[i] && (queryRm[i] != '&')) i++;
+      // Reached end of str
+      if(!queryRm[i]) break;
+      // read next
+      else continue;
     }
     
     // Then read its value
-    for( ; queryRm[i] && (queryRm[i] != '&'); i++) {
+    short dest_i = 0;
+    for( ; queryRm[i] && (queryRm[i] != '&'); (i++ && dest_i++)) {
       if(queryRm[i] == '%') {
         // Decode url
         char ch = '\0';
@@ -132,16 +171,18 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr) {
         i++;
         ch = ch * 16 + (queryRm[i] - 0x37 + (queryRm[i] >= '0' && queryRm[i] <= '9') * 7);
         
-        dest[i] = ch;
+        dest[dest_i] = ch;
       }
-      else dest[i] = queryRm[i];
+      else dest[dest_i] = queryRm[i];
     }
     // Terminate the string
-    dest[i] = '\0';
+    dest[dest_i] = '\0';
+    // Reached end of str
+    if(!queryRm[i]) break;
   }
   
   // Check if state string matches
-  if(strcmp(stateStr, auth ->state)) {
+  if(strcmp(stateStr, state)) {
     fprintf(stderr, "state mismatch; possible CORS attack\n");
 #ifdef GOOGLE_STRICT
     return -1;
@@ -149,26 +190,31 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr) {
   }
   
   // Parse scope string
-  auth ->scopes = NULL;
-  
-  short j = 0;
-  char scopeBuf[256];
-  
-  for(short i = 0; scopeStr[i]; i++) {
-    if(scopeStr[i] == ' ') {
-      // Null terminate
-      scopeBuf[j] = '\0';
-      goog_slist_append(auth ->scopes, scopeBuf);
-      
-      // Read next
-      j = 0;
-    }else {
-      scopeBuf[j] = scopeStr[i];
-      j++;
-      if(j > 255) {
-        fprintf(stderr, "One of the received scope was invalid: longer than 256 bytes");
+  {
+    if(auth ->scopes) {
+      goog_list_free_all(auth ->scopes);
+      auth ->scopes = NULL;
+    }
+    
+    short j = 0;
+    char scopeBuf[256];
+    
+    for(short i = 0; scopeStr[i]; i++) {
+      if(scopeStr[i] == ' ') {
+        // Null terminate
+        scopeBuf[j] = '\0';
+        goog_slist_append(auth ->scopes, scopeBuf);
         
-        return -1;
+        // Read next
+        j = 0;
+      }else {
+        scopeBuf[j] = scopeStr[i];
+        j++;
+        if(j > 255) {
+          fprintf(stderr, "One of the received scope was invalid: longer than 256 bytes");
+          
+          return -1;
+        }
       }
     }
   }
@@ -176,9 +222,23 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr) {
   /*
    * Send oauth2 request to obtain token
    */
-  curl = curl_easy_init();
+  // cURL variables
+  CURL* curl;
+  
+  BinData data;
+  CURLcode res;
+  long resCode = 0;
+  struct curl_slist* headers = NULL;
+  
+  unsigned short respCode = 0;
   data.mem = malloc(1);
   data.size = 0;
+  
+  char postBody[1280] = "";
+  char* authCode_encoded;
+  char* redirect_encoded;
+  
+  curl = curl_easy_init();
   
   if(!curl) {
     fprintf(stderr, "curl init failed\n");
@@ -189,17 +249,25 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr) {
   // SSL settings
   curl_easy_setopt(curl, CURLOPT_CA_CACHE_TIMEOUT, 604800L);
   
-  // Store response data to "data"
+  // store response data to "data"
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeToBuf);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void* ) &data);
   
-  // Set Headers
+  // set headers
   headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
   
-  // POST Data
+  // generate POST data
+  // first, encode the values
+  authCode_encoded = curl_easy_escape(NULL, authCode, strlen(authCode));
+  redirect_encoded = curl_easy_escape(NULL, auth ->redirect, strlen(auth ->redirect));
+  // then put them in the template
   sprintf(postBody, "code=%s&client_id=%s&client_secret=%s&redirect_uri=%s&grant_type=authorization_code",
-      authCode, auth->id, auth->secret, auth->redirect);
+      authCode_encoded, auth ->id, auth ->secret, redirect_encoded);
+  // free encoded strings
+  curl_free(authCode_encoded);
+  curl_free(redirect_encoded);
+  /* !Debug! */printf("postBody: %s\n", postBody);
   
   curl_easy_setopt(curl, CURLOPT_URL, "https://oauth2.googleapis.com/token");
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postBody);
@@ -262,5 +330,9 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr) {
   // Clean up
   cJSON_Delete(json);
   
+  return 0;
+}
+
+int obtainTokenWithRefresh(GOOGLE_AUTH* auth) {
   return 0;
 }

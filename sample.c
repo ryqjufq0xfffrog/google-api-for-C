@@ -6,13 +6,13 @@
 #include "./src/buffers.h"
 #include "./src/shell.h"
 
-GOOGLE_AUTH readCredentials(char*);
+GOOGLE_AUTH* readCredentials(char*);
 
 int main(int argc, char** argv) {
   char* credentialPath = NULL;
-  char* queryStr;
+  char* state = "hello123456";
   
-  GOOGLE_AUTH auth;
+  GOOGLE_AUTH* auth;
   GOOGLE_SLIST* reqScopes = NULL;
   
   goog_global_init();
@@ -36,26 +36,28 @@ int main(int argc, char** argv) {
   auth = readCredentials(credentialPath);
   
   reqScopes = goog_slist_append(reqScopes, "https://www.googleapis.com/auth/drive.appdata");
-  
-  auth.state[0] = '\0';
-  char* authURL = createAuthUrl(&auth, reqScopes);
+
+  char* authURL = createAuthUrl(auth, reqScopes, state, 1, "");
+  goog_list_free_all(reqScopes);
   printf("%s\n", authURL);
   
+  char* queryStr;
   queryStr = getpasswd("Paste the query string: ", 1280);
-  obtainTokenFromQuery(&auth, queryStr);
+  obtainTokenFromQuery(auth, queryStr, state);
   
   // Show obtained access token and refresh token
   printf("Access token: %s\nRefresh_token: %s\n",
-      auth.token, auth.refresh);
+      auth ->token, auth ->refresh);
   
+  goog_free_auth(auth);
   goog_global_cleanup();
   
   return 0;
 }
- 
-GOOGLE_AUTH readCredentials(char* filePath) {
+
+GOOGLE_AUTH* readCredentials(char* filePath) {
   FILE* fp;
-  GOOGLE_AUTH auth;
+  GOOGLE_AUTH* auth = new_GoogleAuth();
   
   if(fp = fopen(filePath, "r")) {
     char buffer[512];
@@ -66,18 +68,18 @@ GOOGLE_AUTH readCredentials(char* filePath) {
       char* readPtr;
       if(strncmp(buffer, "client_secret=", 14) == 0) {
         // client secret
-        dest = auth.secret;
+        dest = auth ->secret;
         readPtr = buffer + 14;
       }else if(strncmp(buffer, "client_id=", 10) == 0) {
         // client id
-        dest = auth.id;
+        dest = auth ->id;
         readPtr = buffer + 10;
       }else if(strncmp(buffer, "redirect_uri=", 13) == 0) {
         // redirect url
-        dest = auth.redirect;
+        dest = auth ->redirect;
         readPtr = buffer + 13;
       }else continue; // no match? just don't copy.
-
+      
       strcpy(dest, readPtr);
       // remove \n at the end
       dest[strlen(dest) - 1] = '\0';

@@ -19,11 +19,13 @@ void goog_global_cleanup();
 
 // Memory
 void goog_free(void*);
+
 void goog_free_auth(GOOGLE_AUTH*);
+GOOGLE_AUTH* new_GoogleAuth();
 
 GOOGLE_SLIST* goog_slist_append(GOOGLE_SLIST*, char*);
-void goog_list_free(GOOGLE_SLIST*);
+void goog_list_free_all(GOOGLE_SLIST*);
 
 // Utils
-char* createAuthUrl(GOOGLE_AUTH*, GOOGLE_SLIST*);
-int obtainTokenFromQuery(GOOGLE_AUTH*, char*);
+char* createAuthUrl(GOOGLE_AUTH*, GOOGLE_SLIST*, char*, int, char*);
+int obtainTokenFromQuery(GOOGLE_AUTH*, char*, char*);

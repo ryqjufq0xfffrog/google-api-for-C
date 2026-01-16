@@ -3,7 +3,7 @@
 #include <string.h>
 
 #include <curl/curl.h>
-#include <cjson/cJSON.h>
+#include <json-c/json.h>
 
 #include "./buffers.h"
 #include "./google.h"
@@ -149,7 +149,7 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr, char* state) {
       i += 6;
     }else if(strncmp("error=", queryRm + i, 6) == 0) {
       // Got error response
-      fprintf(stderr, "OAuth2 Error");
+      fprintf(stderr, "OAuth2 Error\n");
       
       return -1;
     }else {
@@ -211,7 +211,7 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr, char* state) {
         scopeBuf[j] = scopeStr[i];
         j++;
         if(j > 255) {
-          fprintf(stderr, "One of the received scope was invalid: longer than 256 bytes");
+          fprintf(stderr, "One of the received scope was invalid: longer than 256 bytes\n");
           
           return -1;
         }
@@ -267,7 +267,6 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr, char* state) {
   // free encoded strings
   curl_free(authCode_encoded);
   curl_free(redirect_encoded);
-  /* !Debug! */printf("postBody: %s\n", postBody);
   
   curl_easy_setopt(curl, CURLOPT_URL, "https://oauth2.googleapis.com/token");
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postBody);
@@ -287,7 +286,7 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr, char* state) {
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &resCode);
   if(resCode != 200) {
     fprintf(stderr,
-        "https://oauth2.googleapis.com/token returned %d", resCode);
+        "https://oauth2.googleapis.com/token returned %d\n", resCode);
     // Clean up
     curl_easy_cleanup(curl);
     curl_slist_free_all(headers);
@@ -298,37 +297,33 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr, char* state) {
   // Cleanup cURL
   curl_easy_cleanup(curl);
   curl_slist_free_all(headers);
-  
+
   /* 
    * Parse obtained JSON
    */
-  cJSON* json;
-  json = cJSON_Parse(data.mem);
-  
-  // Free received data
-  free(data.mem);
+  struct json_object* json;
+  json = json_tokener_parse(data.mem);
   
   // Check if correctly parsed
   if(json == NULL) {
-    fprintf(stderr, "cJSON parse failed; %s",
-        cJSON_GetErrorPtr());
-    cJSON_Delete(json);
+    fprintf(stderr, "json-c parse failed\n");
     return -1;
   }
-  
   // Copy obtained token to struct GOOGLE_AUTH* auth
-  cJSON* tokenJSON = cJSON_GetObjectItem(json, "access_token");
-  cJSON* refreshJSON = cJSON_GetObjectItem(json, "refresh_token");
+  struct json_object* accessToken = json_object_object_get(json, "access_token");
+  struct json_object* refreshToken = json_object_object_get(json, "refresh_token");
   
-  if(cJSON_IsString(tokenJSON)) {
-    strcpy(auth ->token, tokenJSON ->valuestring);
+  if(accessToken) {
+    strcpy(auth ->token, json_object_get_string(accessToken));
   }  
-  if(cJSON_IsString(refreshJSON)) {
-    strcpy(auth ->refresh, refreshJSON ->valuestring);
+  if(refreshToken) {
+    strcpy(auth ->refresh, json_object_get_string(refreshToken));
   }
-  
   // Clean up
-  cJSON_Delete(json);
+  // Free received data
+  free(data.mem);
+  // Clean up
+  json_object_put(json);
   
   return 0;
 }

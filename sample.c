@@ -6,12 +6,13 @@
 #include "./src/buffers.h"
 #include "./src/shell.h"
 
-GOOGLE_AUTH* readCredentials(char*);
+GOOGLE_CRED* readCredentialsFromFile(char*);
 
 int main(int argc, char** argv) {
   char* credentialPath = NULL;
   char* state = "hello123456";
   
+  GOOGLE_CRED* cred;
   GOOGLE_AUTH* auth;
   GOOGLE_SLIST* reqScopes = NULL;
   
@@ -25,6 +26,13 @@ int main(int argc, char** argv) {
         fprintf(stderr, "missing filename after -c\n");
         return 1;
       }
+    }else if(strcmp(argv[argi], "--state") == 0) {
+      argi++;
+      if(argi < argc) state = *(argv + argi);
+      else {
+        fprintf(stderr, "missing state string after --state\n");
+        return 1;
+      }
     }
   }
   
@@ -33,7 +41,8 @@ int main(int argc, char** argv) {
     return 1;
   }
   
-  auth = readCredentials(credentialPath);
+  cred = readCredentialsFromFile(credentialPath);
+  auth = new_GoogleAuth(cred);
   
   reqScopes = goog_slist_append(reqScopes, "https://www.googleapis.com/auth/drive.appdata");
 
@@ -46,8 +55,8 @@ int main(int argc, char** argv) {
   obtainTokenFromQuery(auth, queryStr, state);
   
   // Show obtained access token and refresh token
-  printf("Access token: %s\nRefresh_token: %s\n",
-      auth ->token, auth ->refresh);
+  printf("Access token: %s (expire: %ld)\nRefresh_token: %s (expire: %ld)\n",
+      auth ->token, auth ->token_expire, auth ->refresh, auth ->refresh_expire);
   
   goog_free_auth(auth);
   goog_global_cleanup();
@@ -55,9 +64,9 @@ int main(int argc, char** argv) {
   return 0;
 }
 
-GOOGLE_AUTH* readCredentials(char* filePath) {
+GOOGLE_CRED* readCredentialsFromFile(char* filePath) {
   FILE* fp;
-  GOOGLE_AUTH* auth = new_GoogleAuth();
+  GOOGLE_CRED* cred = new_GoogleCred();
   
   if(fp = fopen(filePath, "r")) {
     char buffer[512];
@@ -68,15 +77,15 @@ GOOGLE_AUTH* readCredentials(char* filePath) {
       char* readPtr;
       if(strncmp(buffer, "client_secret=", 14) == 0) {
         // client secret
-        dest = auth ->secret;
+        dest = cred ->secret;
         readPtr = buffer + 14;
       }else if(strncmp(buffer, "client_id=", 10) == 0) {
         // client id
-        dest = auth ->id;
+        dest = cred ->id;
         readPtr = buffer + 10;
       }else if(strncmp(buffer, "redirect_uri=", 13) == 0) {
         // redirect url
-        dest = auth ->redirect;
+        dest = cred ->redirect;
         readPtr = buffer + 13;
       }else continue; // no match? just don't copy.
       
@@ -92,5 +101,5 @@ GOOGLE_AUTH* readCredentials(char* filePath) {
     fprintf(stderr, "Couldn't open %s", filePath);
   }
   
-  return auth;
+  return cred;
 }

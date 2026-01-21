@@ -10,88 +10,6 @@
 #include "./google.h"
 
 /*
- * Call this method before calling any of google methods
- */
-void goog_global_init() {
-  curl_global_init(CURL_GLOBAL_DEFAULT);
-
-  return;
-}
-
-/*
- * Everything's done? Then call this method.
- */
-void goog_global_cleanup() {
-  curl_global_cleanup();
-  
-  return;
-}
-
-/*
- * free memory allocated by malloc
- */
-void goog_free(void* ptr) {
-  free(ptr);
-  
-  return;
-}
-
-/*
- * append the string at the end of the given GOOGLE_SLIST
- * Params:
- * list : a list of string
- * str : the string to append at the end of the list
- */
-GOOGLE_SLIST* goog_slist_append(GOOGLE_SLIST* list, char* str) {
-  GOOGLE_SLIST* newItem = (GOOGLE_SLIST* ) malloc(sizeof(GOOGLE_SLIST));
-  strcpy(newItem ->str, str);
-  newItem ->next = list;
-  
-  return newItem;
-}
-
-/*
- * free a GOOGLE_SLIST
- */
-void goog_list_free_all(GOOGLE_SLIST* list) {
-  while(list) {
-    GOOGLE_SLIST* prev = list;
-    list = list ->next;
-    goog_free(prev);
-  }
-  
-  return;
-}
-
-/*
- * GOOGLE_CRED constructor
- */
-GOOGLE_CRED* new_GoogleCred() {
-  GOOGLE_CRED* cred = (GOOGLE_CRED* ) malloc(sizeof(GOOGLE_CRED));
-  
-  return cred;
-}
-
-/*
- * GOOGLE_AUTH constructor
- */
-GOOGLE_AUTH* new_GoogleAuth(GOOGLE_CRED* cred) {
-  GOOGLE_AUTH* auth = (GOOGLE_AUTH* ) malloc(sizeof(GOOGLE_AUTH));
-  auth ->cred = cred;
-  auth ->scopes = NULL;
-  
-  return auth;
-}
-
-/*
- * free a GOOGLE_AUTH
- */
-void goog_free_auth(GOOGLE_AUTH* auth) {
-  goog_list_free_all(auth ->scopes);
-  goog_free(auth);
-}
-
-/*
  * creates an redirect URL for Google's authorization server
  *
  * Params:
@@ -108,15 +26,15 @@ char* createAuthUrl(GOOGLE_AUTH* auth, GOOGLE_SLIST* reqScopes, char* state, int
   char* scopes_encoded;
   char* redirect_encoded;
   char scopestr[1536] = "";
-  
+
   URL = (char* ) malloc(2048);
   if(!URL) return NULL;
-  
+
   // Join scopes with space
   for( ; reqScopes; reqScopes = reqScopes ->next) {
     sprintf(scopestr + strlen(scopestr), "%s ", reqScopes ->str);
   }
-  
+
   // first URL-encode strings
   scopes_encoded = curl_easy_escape(NULL, scopestr, strlen(scopestr));
   redirect_encoded = curl_easy_escape(NULL, auth -> cred ->redirect, strlen(auth -> cred ->redirect));
@@ -133,11 +51,51 @@ char* createAuthUrl(GOOGLE_AUTH* auth, GOOGLE_SLIST* reqScopes, char* state, int
   // free encoded strings
   curl_free(scopes_encoded);
   curl_free(redirect_encoded);
-  
+
   // generate the result
   sprintf(URL, "https://accounts.google.com/o/oauth2/v2/auth?%s", params);
-  
+
   return URL;
+}
+
+/*
+ * parse scopes (split with " ")
+ *
+ * Params :
+ * auth : auth ->scopes will be the parsed scopes
+ * scopeStr : scopes joined by " "
+ */
+int parseScopes(GOOGLE_AUTH* auth, const char* scopeStr) {
+  // Free previous
+  if(auth ->scopes) {
+    goog_list_free_all(auth ->scopes);
+    auth ->scopes = NULL;
+  }
+
+  short j = 0;
+  char scopeBuf[256];
+  for(short i = 0; ; i++) {
+    if(scopeStr[i] == ' ' || scopeStr[i] == '\0') {
+      // End of a scope?
+      // Null terminate buf
+      scopeBuf[j] = '\0';
+      auth ->scopes = goog_slist_append(auth ->scopes, scopeBuf);
+
+      // Read next
+      j = 0;
+      // EOS?
+      if(scopeStr[i] == '\0') break;
+    }else {
+      scopeBuf[j] = scopeStr[i];
+      j++;
+      if(j > 255) {
+        fprintf(stderr, "One of the received scope was invalid: longer than 256 bytes\n");
+
+        return -1;
+      }
+    }
+  }
+  return 0;
 }
 
 /*
@@ -151,38 +109,38 @@ char* createAuthUrl(GOOGLE_AUTH* auth, GOOGLE_SLIST* reqScopes, char* state, int
 int exchangeToken(GOOGLE_AUTH* auth, char* postBody) {
   // cURL variables
   CURL* curl;
-  
+
   BinData data;
   CURLcode res;
   long resCode = 0;
   struct curl_slist* headers = NULL;
-  
+
   unsigned short respCode = 0;
   data.mem = malloc(1);
   data.size = 0;
-  
+
   curl = curl_easy_init();
-  
+
   if(!curl) {
     fprintf(stderr, "curl init failed\n");
-    
+
     return -1;
   }
-  
+
   // SSL settings
   curl_easy_setopt(curl, CURLOPT_CA_CACHE_TIMEOUT, 604800L);
-  
+
   // store response data to "data"
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, writeToBuf);
   curl_easy_setopt(curl, CURLOPT_WRITEDATA, (void* ) &data);
-  
+
   // set headers
   headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-  
+
   curl_easy_setopt(curl, CURLOPT_URL, "https://oauth2.googleapis.com/token");
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postBody);
-  
+
   // Execute request
   res = curl_easy_perform(curl);
   if(res != CURLE_OK) {
@@ -191,10 +149,10 @@ int exchangeToken(GOOGLE_AUTH* auth, char* postBody) {
     // Clean up
     curl_easy_cleanup(curl);
     curl_slist_free_all(headers);
-    
+
     return -1;
   }
-  
+
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &resCode);
   if(resCode != 200) {
     fprintf(stderr,
@@ -202,10 +160,10 @@ int exchangeToken(GOOGLE_AUTH* auth, char* postBody) {
     // Clean up
     curl_easy_cleanup(curl);
     curl_slist_free_all(headers);
-    
+
     return -1;
   }
-  
+
   // Cleanup cURL
   curl_easy_cleanup(curl);
   curl_slist_free_all(headers);
@@ -215,7 +173,7 @@ int exchangeToken(GOOGLE_AUTH* auth, char* postBody) {
    */
   struct json_object* json;
   json = json_tokener_parse(data.mem);
-  
+
   // Check if correctly parsed
   if(json == NULL) {
     fprintf(stderr, "json-c parse failed\n");
@@ -226,6 +184,7 @@ int exchangeToken(GOOGLE_AUTH* auth, char* postBody) {
   struct json_object* expiresIn = json_object_object_get(json, "expires_in");
   struct json_object* refreshToken = json_object_object_get(json, "refresh_token");
   struct json_object* refreshExpiresIn = json_object_object_get(json, "refresh_token_expires_in");
+  struct json_object* scopeStrObj = json_object_object_get(json, "scope");
   time_t date_now = time(NULL);
 
   if(accessToken) {
@@ -236,12 +195,15 @@ int exchangeToken(GOOGLE_AUTH* auth, char* postBody) {
     strcpy(auth ->refresh, json_object_get_string(refreshToken));
     auth ->refresh_expire = date_now + (time_t)json_object_get_int64(refreshExpiresIn);
   }
+  if(scopeStrObj) {
+    parseScopes(auth, json_object_get_string(scopeStrObj));
+  }
   // Clean up
   // Free received data
   free(data.mem);
   // Free json data
   json_object_put(json);
-  
+
   return 0;
 }
 
@@ -260,11 +222,11 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr, char* state) {
   char authCode[257] = "";
   char scopeStr[1280] = "";
   char stateStr[512] = "";
-  
+
   char* query_trim = queryStr;
   // Ignore leading "?"
   if(query_trim[0] == '?') query_trim++;
-  
+
   for(short i = 0; ; i++) {
     char* dest;
     // ?name1=value1&name2=value2.
@@ -280,7 +242,7 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr, char* state) {
     }else if(strncmp("error=", query_trim + i, 6) == 0) {
       // Got error response
       fprintf(stderr, "OAuth2 Error\n");
-      
+
       return -1;
     }else {
       while(query_trim[i] && (query_trim[i] != '&')) i++;
@@ -289,7 +251,7 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr, char* state) {
       // read next
       else continue;
     }
-    
+
     // Then read its value
     short dest_i = 0;
     for( ; query_trim[i] && (query_trim[i] != '&'); (i++ && dest_i++)) {
@@ -300,7 +262,7 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr, char* state) {
         ch = (query_trim[i] - 0x37 + (query_trim[i] >= '0' && query_trim[i] <= '9') * 7);
         i++;
         ch = ch * 16 + (query_trim[i] - 0x37 + (query_trim[i] >= '0' && query_trim[i] <= '9') * 7);
-        
+
         dest[dest_i] = ch;
       }
       else dest[dest_i] = query_trim[i];
@@ -310,7 +272,7 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr, char* state) {
     // Reached end of str
     if(!query_trim[i]) break;
   }
-  
+
   // Check if state string matches
   if(strcmp(stateStr, state)) {
     fprintf(stderr, "state mismatch; possible CORS attack\n");
@@ -318,36 +280,9 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr, char* state) {
     return -1;
 #endif
   }
-  
   // Parse scope string
-  {
-    if(auth ->scopes) {
-      goog_list_free_all(auth ->scopes);
-      auth ->scopes = NULL;
-    }
-    
-    short j = 0;
-    char scopeBuf[256];
-    
-    for(short i = 0; scopeStr[i]; i++) {
-      if(scopeStr[i] == ' ') {
-        // Null terminate
-        scopeBuf[j] = '\0';
-        goog_slist_append(auth ->scopes, scopeBuf);
-        
-        // Read next
-        j = 0;
-      }else {
-        scopeBuf[j] = scopeStr[i];
-        j++;
-        if(j > 255) {
-          fprintf(stderr, "One of the received scope was invalid: longer than 256 bytes\n");
-          
-          return -1;
-        }
-      }
-    }
-  }
+  if(parseScopes(auth, scopeStr)) return -1;
+
   // generate POST data
   char postBody[1280] = "";
   char* authCode_encoded;

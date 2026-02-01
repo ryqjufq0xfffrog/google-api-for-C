@@ -10,7 +10,6 @@
  */
 void goog_global_init() {
   curl_global_init(CURL_GLOBAL_DEFAULT);
-
   return;
 }
 
@@ -19,7 +18,6 @@ void goog_global_init() {
  */
 void goog_global_cleanup() {
   curl_global_cleanup();
-  
   return;
 }
 
@@ -28,7 +26,6 @@ void goog_global_cleanup() {
  */
 void goog_free(void* ptr) {
   free(ptr);
-  
   return;
 }
 
@@ -40,7 +37,7 @@ void goog_free(void* ptr) {
  * list : a list of string
  * str : the string to append at the end of the list
  */
-GOOGLE_SLIST* goog_slist_append(GOOGLE_SLIST* list, char* str) {
+GOOGLE_SLIST* goog_slist_append(GOOGLE_SLIST* list, const char* str) {
   GOOGLE_SLIST* newItem = (GOOGLE_SLIST* ) malloc(sizeof(GOOGLE_SLIST));
   strcpy(newItem ->str, str);
   newItem ->next = list;
@@ -52,6 +49,7 @@ GOOGLE_SLIST* goog_slist_append(GOOGLE_SLIST* list, char* str) {
  * free a GOOGLE_SLIST
  */
 void goog_list_free_all(GOOGLE_SLIST* list) {
+  /* Debug! */printf("list: %p\n", list);
   while(list) {
     GOOGLE_SLIST* prev = list;
     list = list ->next;
@@ -65,7 +63,12 @@ void goog_list_free_all(GOOGLE_SLIST* list) {
  * GOOGLE_CRED constructor
  */
 GOOGLE_CRED* new_GoogleCred() {
+  // Allocate
   GOOGLE_CRED* cred = (GOOGLE_CRED* ) malloc(sizeof(GOOGLE_CRED));
+  // Default values
+  if(cred) {
+    memset(cred, 0, sizeof(GOOGLE_CRED));
+  }
   
   return cred;
 }
@@ -74,9 +77,13 @@ GOOGLE_CRED* new_GoogleCred() {
  * GOOGLE_AUTH constructor
  */
 GOOGLE_AUTH* new_GoogleAuth(GOOGLE_CRED* cred) {
+  // Allocate
   GOOGLE_AUTH* auth = (GOOGLE_AUTH* ) malloc(sizeof(GOOGLE_AUTH));
+  // Default values
+  if(auth) {
+    memset(auth, 0, sizeof(GOOGLE_AUTH));
+  }
   auth ->cred = cred;
-  auth ->scopes = NULL;
   
   return auth;
 }
@@ -88,4 +95,3 @@ void goog_free_auth(GOOGLE_AUTH* auth) {
   goog_list_free_all(auth ->scopes);
   goog_free(auth);
 }
-

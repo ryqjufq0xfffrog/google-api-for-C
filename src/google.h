@@ -6,7 +6,7 @@ typedef struct _ggl_slist {
 typedef struct {
   char id[256];
   char secret[256];
-  char redirect[2048];
+  GOOGLE_SLIST* redirect;
 } GOOGLE_CRED;
 
 typedef struct {
@@ -29,9 +29,10 @@ void goog_free_auth(GOOGLE_AUTH*);
 GOOGLE_AUTH* new_GoogleAuth(GOOGLE_CRED*);
 GOOGLE_CRED* new_GoogleCred();
 
-GOOGLE_SLIST* goog_slist_append(GOOGLE_SLIST*, char*);
+GOOGLE_SLIST* goog_slist_append(GOOGLE_SLIST*, const char*);
 void goog_list_free_all(GOOGLE_SLIST*);
 
 // Utils
-char* createAuthUrl(GOOGLE_AUTH*, GOOGLE_SLIST*, char*, int, char*);
-int obtainTokenFromQuery(GOOGLE_AUTH*, char*, char*);
+GOOGLE_CRED* readCredentialsFromFile(char*);
+char* createAuthUrl(GOOGLE_AUTH*, GOOGLE_SLIST*, char*, char*, int, char*);
+int obtainTokenFromQuery(GOOGLE_AUTH*, char*, char*, char*);

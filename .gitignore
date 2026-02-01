@@ -1,4 +1,5 @@
 # API keys
+credentials.json
 credentials
 
 # Prerequisites
@@ -31,28 +32,26 @@ credentials
 *.so.*
 *.dylib
 
-# Executables
-*.exe
-*.out
-*.app
-*.i*86
-*.x86_64
-*.hex
+# Build dir
+build/
 
-# Debug files
-*.dSYM/
-*.su
-*.idb
-*.pdb
+# Autoconf generated
+/autom4te.cache/
+/build-aux/
 
-# Kernel Module Compile Results
-*.mod*
-*.cmd
-.tmp_versions/
-modules.order
-Module.symvers
-Mkfile.old
-dkms.conf
+.deps/
+.dirstamp
+*.in
+*.in~
 
-# debug information files
-*.dwo
+/missing
+/install-sh
+/depcomp
+/compile
+/ar-lib
+/aclocal.m4
+/configure
+/configure~
+/config.guess
+/config.sub
+/ltmain.sh

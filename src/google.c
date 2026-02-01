@@ -10,6 +10,48 @@
 #include "./google.h"
 
 /*
+ * Read credentials.json
+ *
+ * Params : 
+ * filePath : path to credentials.json
+ */
+GOOGLE_CRED* readCredentialsFromFile(char* filePath) {
+  FILE* fp;
+  GOOGLE_CRED* cred = new_GoogleCred();
+  // read file
+  json_object* json = json_object_from_file(filePath);
+  json_object* installed = NULL;
+  json && (installed = json_object_object_get(json, "web"));
+  if(installed) {
+    json_object* secretObj = json_object_object_get(installed, "client_secret");
+    json_object* idObj = json_object_object_get(installed, "client_id");
+    json_object* redirectArray = json_object_object_get(installed, "redirect_uris");
+    if(secretObj) {
+      strcpy(cred ->secret, json_object_get_string(secretObj));
+    }
+    if(idObj) {
+      strcpy(cred ->id, json_object_get_string(idObj));
+    }
+    if(redirectArray) {
+      int redirectLen = json_object_array_length(redirectArray);
+      for(int ri = 0; ri < redirectLen; ri++) {
+        cred ->redirect = goog_slist_append(cred ->redirect,
+            json_object_get_string(
+              json_object_array_get_idx(redirectArray, ri)
+            )
+        );
+      }
+    }
+  }else {
+    // Couldn't open credentials file
+    fprintf(stderr, "Couldn't parse %s\n", filePath);
+  }
+  // Clean up
+  json_object_put(json);
+  
+  return cred;
+}
+/*
  * creates an redirect URL for Google's authorization server
  *
  * Params:
@@ -20,7 +62,7 @@
  * optional : string; optional query parameters.
  * * Must start with & like this: "&login_hint=sample.gmail.com&prompt=none"
  */
-char* createAuthUrl(GOOGLE_AUTH* auth, GOOGLE_SLIST* reqScopes, char* state, int offline, char* optional) {
+char* createAuthUrl(GOOGLE_AUTH* auth, GOOGLE_SLIST* reqScopes, char* redirect_uri, char* state, int offline, char* optional) {
   char* URL;
   char params[2000];
   char* scopes_encoded;
@@ -35,9 +77,11 @@ char* createAuthUrl(GOOGLE_AUTH* auth, GOOGLE_SLIST* reqScopes, char* state, int
     sprintf(scopestr + strlen(scopestr), "%s ", reqScopes ->str);
   }
 
+  // redirect_uri defaults to the last item in credentials.json ->* ->redirect_uris
+  if(!redirect_uri) redirect_uri = auth ->cred ->redirect ->str;
   // first URL-encode strings
   scopes_encoded = curl_easy_escape(NULL, scopestr, strlen(scopestr));
-  redirect_encoded = curl_easy_escape(NULL, auth -> cred ->redirect, strlen(auth -> cred ->redirect));
+  redirect_encoded = curl_easy_escape(NULL, redirect_uri, strlen(redirect_uri));
   // generate Query String
   if(state) {
     // state is not NULL
@@ -216,7 +260,7 @@ int exchangeToken(GOOGLE_AUTH* auth, char* postBody) {
  * queryStr : the query string from google
  * state : the state string you gave when you called createAuthUrl()
  */
-int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr, char* state) {
+int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr, char* redirect_uri, char* state) {
   // Parse query string
   // Buffers for parsing query string
   char authCode[257] = "";
@@ -280,16 +324,20 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr, char* state) {
     return -1;
 #endif
   }
+  /* Debug! */printf("still alive\n");
   // Parse scope string
   if(parseScopes(auth, scopeStr)) return -1;
+  /* Debug! */printf("still alive\n");
 
   // generate POST data
   char postBody[1280] = "";
   char* authCode_encoded;
   char* redirect_encoded;
+  // redirect_uri defaults to the last item in credentials.json ->* ->redirect_uris
+  if(!redirect_uri) redirect_uri = auth ->cred ->redirect ->str;
   // first, encode the values
   authCode_encoded = curl_easy_escape(NULL, authCode, strlen(authCode));
-  redirect_encoded = curl_easy_escape(NULL, auth ->cred ->redirect, strlen(auth ->cred ->redirect));
+  redirect_encoded = curl_easy_escape(NULL, redirect_uri, strlen(redirect_uri));
   // then put them in the template
   sprintf(postBody, "code=%s&client_id=%s&client_secret=%s&redirect_uri=%s&grant_type=authorization_code",
       authCode_encoded, auth ->cred ->id, auth ->cred ->secret, redirect_encoded);

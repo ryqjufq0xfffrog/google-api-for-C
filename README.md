@@ -8,6 +8,7 @@ Install them, and if you get some linking errors, you might want to edit `INCDIR
 # Building:
 run
 ```
+./configure
 make
 ```
 at the top dir.

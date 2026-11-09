@@ -39,7 +39,7 @@ int main(int argc, char** argv) {
     return 1;
   }
   
-  cred = readCredentialsFromFile(credentialPath);
+  cred = readCredentialsFromFile(credentialPath, "web");
   auth = new_GoogleAuth(cred);
   
   reqScopes = goog_slist_append(reqScopes, "https://www.googleapis.com/auth/drive.appdata");

@@ -4,9 +4,11 @@
 #include <string.h>
 
 #include <curl/curl.h>
+#include <openssl/rand.h>
 #include <json-c/json.h>
 
 #include "./buffers.h"
+#include "./sha256.h"
 #include "./google.h"
 
 /*
@@ -15,22 +17,30 @@
  * Params : 
  * filePath : path to credentials.json
  */
-GOOGLE_CRED* readCredentialsFromFile(char* filePath) {
+GOOGLE_CRED* readCredentialsFromFile(const char* const filePath, const char* const type) {
   FILE* fp;
   GOOGLE_CRED* cred = new_GoogleCred();
   // read file
   json_object* json = json_object_from_file(filePath);
   json_object* installed = NULL;
-  json && (installed = json_object_object_get(json, "web"));
+  json && (installed = json_object_object_get(json, type));
   if(installed) {
     json_object* secretObj = json_object_object_get(installed, "client_secret");
     json_object* idObj = json_object_object_get(installed, "client_id");
+    json_object* authUriObj = json_object_object_get(installed, "auth_uri");
+    json_object* tokenUriObj = json_object_object_get(installed, "token_uri");
     json_object* redirectArray = json_object_object_get(installed, "redirect_uris");
     if(secretObj) {
       strcpy(cred ->secret, json_object_get_string(secretObj));
     }
     if(idObj) {
       strcpy(cred ->id, json_object_get_string(idObj));
+    }
+    if(authUriObj) {
+      strcpy(cred ->auth_uri, json_object_get_string(authUriObj));
+    }
+    if(tokenUriObj) {
+      strcpy(cred ->token_uri, json_object_get_string(tokenUriObj));
     }
     if(redirectArray) {
       int redirectLen = json_object_array_length(redirectArray);
@@ -60,9 +70,9 @@ GOOGLE_CRED* readCredentialsFromFile(char* filePath) {
  * state : string; any value to maintain state
  * offline : boolean; set 1 to get refresh token
  * optional : string; optional query parameters.
- * * Must start with & like this: "&login_hint=sample.gmail.com&prompt=none"
+ *   like this: "login_hint=sample.gmail.com&prompt=none"
  */
-char* createAuthUrl(GOOGLE_AUTH* auth, GOOGLE_SLIST* reqScopes, char* redirect_uri, char* state, int offline, char* optional) {
+char* createAuthUrl(GOOGLE_AUTH* auth, GOOGLE_SLIST* reqScopes, char* redirect_uri, char* state, int offline, int PKCE, char* optional) {
   char* URL;
   char params[2000];
   char* scopes_encoded;
@@ -82,22 +92,26 @@ char* createAuthUrl(GOOGLE_AUTH* auth, GOOGLE_SLIST* reqScopes, char* redirect_u
   // first URL-encode strings
   scopes_encoded = curl_easy_escape(NULL, scopestr, strlen(scopestr));
   redirect_encoded = curl_easy_escape(NULL, redirect_uri, strlen(redirect_uri));
-  // generate Query String
-  if(state) {
-    // state is not NULL
-    sprintf(params, "client_id=%s&response_type=code&scope=%s&access_type=%s&redirect_uri=%s&state=%s%s",
-        auth ->cred ->id, scopes_encoded, offline? "offline": "online", redirect_encoded, state, optional);
-  }else {
-    // state not given
-    sprintf(params, "client_id=%s&response_type=code&scope=%s&access_type=%s&redirect_uri=%s%s",
-        auth ->cred ->id, scopes_encoded, offline? "offline": "online", redirect_encoded, optional);
+
+  // PKCE
+  if(PKCE) {
+    if(RAND_bytes(auth ->challenge, 128) != 1) {
+      return NULL;
+    }
   }
+
+  // generate Query String
+  sprintf(params, "client_id=%s&response_type=code&scope=%s&access_type=%s&redirect_uri=%s",
+        auth ->cred ->id, scopes_encoded, offline? "offline": "online", redirect_encoded);
+  if(PKCE) sprintf(params + strlen(params), "&code_challenge=%s&code_challenge_method=S256", s256);
+  if(state) sprintf(params + strlen(params), "&state=%s", state);
+  if(optional) sprintf(params + strlen(params), "&%s", optional);
   // free encoded strings
   curl_free(scopes_encoded);
   curl_free(redirect_encoded);
 
   // generate the result
-  sprintf(URL, "https://accounts.google.com/o/oauth2/v2/auth?%s", params);
+  sprintf(URL, "%s?%s", auth ->cred ->auth_uri, params);
 
   return URL;
 }
@@ -182,7 +196,7 @@ int exchangeToken(GOOGLE_AUTH* auth, char* postBody) {
   headers = curl_slist_append(headers, "Content-Type: application/x-www-form-urlencoded");
   curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
-  curl_easy_setopt(curl, CURLOPT_URL, "https://oauth2.googleapis.com/token");
+  curl_easy_setopt(curl, CURLOPT_URL, auth ->cred ->token_uri);
   curl_easy_setopt(curl, CURLOPT_POSTFIELDS, postBody);
 
   // Execute request
@@ -200,7 +214,7 @@ int exchangeToken(GOOGLE_AUTH* auth, char* postBody) {
   curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &resCode);
   if(resCode != 200) {
     fprintf(stderr,
-        "https://oauth2.googleapis.com/token returned %d\n", resCode);
+        "%s returned %d\n", auth ->cred ->token_uri, resCode);
     // Clean up
     curl_easy_cleanup(curl);
     curl_slist_free_all(headers);
@@ -324,10 +338,8 @@ int obtainTokenFromQuery(GOOGLE_AUTH* auth, char* queryStr, char* redirect_uri, 
     return -1;
 #endif
   }
-  /* Debug! */printf("still alive\n");
   // Parse scope string
   if(parseScopes(auth, scopeStr)) return -1;
-  /* Debug! */printf("still alive\n");
 
   // generate POST data
   char postBody[1280] = "";

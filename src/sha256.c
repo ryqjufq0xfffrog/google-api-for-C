@@ -3,9 +3,7 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-uint32_t ror(uint32_t x, int n) {
-  return (x << (32 - n)) | (x >> n);
-}
+#define ror(x, n) ((x) << (32 - (n))) | ((x) >> (n))
 
 void writeInt32BigEndian(char* p, uint32_t number) {
   p[0] = (number >> 24) & 0xff;
@@ -139,3 +137,7 @@ char* bin2hexStr(char* hex, unsigned char* data, int length) {
 
   return hex;
 }
+
+/* Binary to base64 string
+ *
+ */
